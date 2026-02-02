@@ -344,78 +344,112 @@ if process_button and youtube_url:
                 st.markdown('<div class="section-header">📊 Quiz - Test Your Understanding</div>', unsafe_allow_html=True)
                 st.info("📌 Answer all 10 questions based on the video content")
                 
-                with st.spinner("🤖 AI is creating quiz questions..."):
-                    quiz_text = generate_quiz(transcript)
+                # Initialize session state with video-specific key
+                quiz_key = f"quiz_{video_id}"
+                if quiz_key not in st.session_state:
+                    with st.spinner("🤖 AI is creating quiz questions..."):
+                        quiz_text = generate_quiz(transcript)
+                        st.session_state[quiz_key] = parse_quiz(quiz_text) if quiz_text else []
                 
-                if quiz_text:
-                    questions = parse_quiz(quiz_text)
+                questions = st.session_state.get(quiz_key, [])
+                
+                if questions:
+                    # Initialize session state for this quiz
+                    if f'answers_{video_id}' not in st.session_state:
+                        st.session_state[f'answers_{video_id}'] = {}
+                    if f'submitted_{video_id}' not in st.session_state:
+                        st.session_state[f'submitted_{video_id}'] = False
                     
-                    if questions:
-                        # Initialize session state for answers if not exists
-                        if 'user_answers' not in st.session_state:
-                            st.session_state.user_answers = {}
-                        if 'show_results' not in st.session_state:
-                            st.session_state.show_results = False
+                    user_answers = st.session_state[f'answers_{video_id}']
+                    is_submitted = st.session_state[f'submitted_{video_id}']
+                    
+                    # Display each question
+                    for idx, q in enumerate(questions, 1):
+                        st.markdown(f"### 📝 Question {idx} of {len(questions)}")
+                        st.markdown(f"**{q['question']}**")
+                        st.markdown("")  # spacing
                         
-                        # Display each question
-                        for idx, q in enumerate(questions, 1):
-                            st.markdown(f"### Question {idx}")
-                            st.markdown(f"**{q['question']}**")
-                            
-                            # Radio button for options
-                            user_answer = st.radio(
-                                f"Select your answer for Question {idx}:",
-                                options=['A', 'B', 'C', 'D'],
-                                format_func=lambda x: f"{x}) {q['options'].get(x, '')}",
-                                key=f"q_{idx}",
-                                index=None
-                            )
-                            
-                            if user_answer:
-                                st.session_state.user_answers[idx] = user_answer
-                            
-                            # Show answer if results are visible
-                            if st.session_state.show_results:
-                                if user_answer == q['answer']:
-                                    st.success(f"✅ Correct! The answer is {q['answer']}) {q['options'][q['answer']]}")
+                        # Create options with better formatting
+                        options_display = {
+                            'A': f"A) {q['options'].get('A', '')}",
+                            'B': f"B) {q['options'].get('B', '')}",
+                            'C': f"C) {q['options'].get('C', '')}",
+                            'D': f"D) {q['options'].get('D', '')}"
+                        }
+                        
+                        # Get current answer (from session state or None)
+                        current_answer = user_answers.get(idx)
+                        
+                        # Radio button for options
+                        selected = st.radio(
+                            f"Choose your answer:",
+                            options=['A', 'B', 'C', 'D'],
+                            format_func=lambda x, opts=options_display: opts[x],
+                            key=f"question_{video_id}_{idx}",
+                            index=['A', 'B', 'C', 'D'].index(current_answer) if current_answer in ['A', 'B', 'C', 'D'] else None,
+                            disabled=is_submitted
+                        )
+                        
+                        # Save answer to session state
+                        if selected:
+                            user_answers[idx] = selected
+                        
+                        # Show result if submitted
+                        if is_submitted and selected:
+                            if selected == q['answer']:
+                                st.success(f"✅ Correct! The answer is **{q['answer']}) {q['options'][q['answer']]}**")
+                            else:
+                                st.error(f"❌ Incorrect. The correct answer is **{q['answer']}) {q['options'][q['answer']]}**")
+                        
+                        st.markdown("---")
+                    
+                    # Buttons section
+                    st.markdown("")  # spacing
+                    col1, col2, col3 = st.columns([2, 2, 1])
+                    
+                    with col1:
+                        if not is_submitted:
+                            if st.button("✅ Submit Quiz", type="primary", use_container_width=True):
+                                # Check if all questions are answered
+                                if len(user_answers) < len(questions):
+                                    st.warning(f"⚠️ Please answer all {len(questions)} questions before submitting!")
                                 else:
-                                    st.error(f"❌ Wrong! The correct answer is {q['answer']}) {q['options'][q['answer']]}")
-                            
-                            st.markdown("---")
+                                    st.session_state[f'submitted_{video_id}'] = True
+                                    st.rerun()
+                    
+                    with col2:
+                        if st.button("🔄 Try Again", use_container_width=True):
+                            st.session_state[f'answers_{video_id}'] = {}
+                            st.session_state[f'submitted_{video_id}'] = False
+                            st.rerun()
+                    
+                    # Show score if submitted
+                    if is_submitted:
+                        st.markdown("---")
+                        correct = sum(1 for idx, q in enumerate(questions, 1) 
+                                    if user_answers.get(idx) == q['answer'])
+                        total = len(questions)
+                        percentage = (correct / total) * 100
                         
-                        # Submit and Results buttons
-                        col1, col2 = st.columns(2)
+                        # Score display with color coding
+                        if percentage >= 80:
+                            st.success(f"### 🎉 Excellent! Your Score: {correct}/{total} ({percentage:.1f}%)")
+                            st.info("🌟 Outstanding performance! You have mastered this content!")
+                        elif percentage >= 60:
+                            st.info(f"### 👍 Good Job! Your Score: {correct}/{total} ({percentage:.1f}%)")
+                            st.info("💪 Well done! Keep up the good work!")
+                        else:
+                            st.warning(f"### 📚 Your Score: {correct}/{total} ({percentage:.1f}%)")
+                            st.info("💡 Don't worry! Review the video and try again. You'll do better!")
                         
-                        with col1:
-                            if st.button("📝 Submit Quiz", use_container_width=True):
-                                st.session_state.show_results = True
-                                
-                                # Calculate score
-                                correct = sum(1 for idx, q in enumerate(questions, 1) 
-                                            if st.session_state.user_answers.get(idx) == q['answer'])
-                                total = len(questions)
-                                percentage = (correct / total) * 100
-                                
-                                st.balloons()
-                                st.success(f"### 🎯 Your Score: {correct}/{total} ({percentage:.1f}%)")
-                                
-                                if percentage >= 80:
-                                    st.info("🌟 Excellent! You have a great understanding of the content!")
-                                elif percentage >= 60:
-                                    st.info("👍 Good job! Keep learning!")
-                                else:
-                                    st.info("📚 Keep practicing! Review the video again.")
-                        
-                        with col2:
-                            if st.button("🔄 Reset Quiz", use_container_width=True):
-                                st.session_state.user_answers = {}
-                                st.session_state.show_results = False
-                                st.rerun()
-                    else:
-                        st.warning("⚠️ Could not parse quiz properly. Showing raw format:")
-                        st.markdown(f'<div class="quiz-question"><pre>{quiz_text}</pre></div>', unsafe_allow_html=True)
-                else:
-                    st.error("❌ Failed to generate quiz. Please try again.")
+                        if percentage == 100:
+                            st.balloons()
+                
+                elif st.session_state.get(quiz_key) is not None:
+                    st.warning("⚠️ Could not generate quiz questions. The video content might be too short or unclear.")
+                    if st.button("🔄 Retry Quiz Generation"):
+                        del st.session_state[quiz_key]
+                        st.rerun()
             
             # Transcript Tab
             with tab4:
