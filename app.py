@@ -112,7 +112,7 @@ def generate_quiz(transcript):
     """Generate exactly 10 quiz questions using Google Gemini"""
     try:
         if not GOOGLE_API_KEY:
-            return "⚠️ API Key not configured. Please add GOOGLE_API_KEY to .env file"
+            return None
             
         prompt = f"""
         You are an educational quiz creator. Based on the following video transcript, create EXACTLY 10 multiple-choice questions.
@@ -127,17 +127,23 @@ def generate_quiz(transcript):
         4. Questions should test understanding of key concepts from the video
         5. Cover different topics from the transcript
         
-        Format each question EXACTLY as follows:
+        Format each question EXACTLY as follows (strictly follow this format):
         
-        Q1: [Question text]
-        A) [Option A]
-        B) [Option B]
-        C) [Option C]
-        D) [Option D]
-        Correct Answer: [A/B/C/D]
+        Q1: [Question text here]
+        A) [Option A text]
+        B) [Option B text]
+        C) [Option C text]
+        D) [Option D text]
+        ANSWER: A
         
-        Q2: [Question text]
-        ...and so on until Q10.
+        Q2: [Question text here]
+        A) [Option A text]
+        B) [Option B text]
+        C) [Option C text]
+        D) [Option D text]
+        ANSWER: B
+        
+        Continue this exact pattern for all 10 questions. Use only A, B, C, or D for the ANSWER field.
         """
         
         response = client.models.generate_content(
@@ -147,7 +153,55 @@ def generate_quiz(transcript):
         return response.text
     except Exception as e:
         st.error(f"Quiz Error Details: {str(e)}")
-        return f"❌ Error generating quiz. Please try again."
+        return None
+
+def parse_quiz(quiz_text):
+    """Parse quiz text into structured format"""
+    import re
+    
+    if not quiz_text:
+        return []
+    
+    questions = []
+    # Split by question numbers
+    quiz_parts = re.split(r'Q\d+:', quiz_text)
+    
+    for part in quiz_parts[1:]:  # Skip first empty part
+        if not part.strip():
+            continue
+            
+        lines = [line.strip() for line in part.strip().split('\n') if line.strip()]
+        
+        if len(lines) < 5:
+            continue
+        
+        question_data = {
+            'question': lines[0],
+            'options': {},
+            'answer': None
+        }
+        
+        # Extract options
+        for line in lines[1:]:
+            if line.startswith('A)'):
+                question_data['options']['A'] = line[2:].strip()
+            elif line.startswith('B)'):
+                question_data['options']['B'] = line[2:].strip()
+            elif line.startswith('C)'):
+                question_data['options']['C'] = line[2:].strip()
+            elif line.startswith('D)'):
+                question_data['options']['D'] = line[2:].strip()
+            elif 'ANSWER:' in line.upper() or 'CORRECT ANSWER:' in line.upper():
+                # Extract answer
+                answer_match = re.search(r'[ABCD]', line.upper())
+                if answer_match:
+                    question_data['answer'] = answer_match.group()
+        
+        # Only add if we have all components
+        if question_data['question'] and len(question_data['options']) == 4 and question_data['answer']:
+            questions.append(question_data)
+    
+    return questions[:10]  # Return max 10 questions
 
 # Streamlit UI Configuration
 st.set_page_config(
@@ -288,10 +342,80 @@ if process_button and youtube_url:
             # Quiz Tab
             with tab3:
                 st.markdown('<div class="section-header">📊 Quiz - Test Your Understanding</div>', unsafe_allow_html=True)
-                st.info("📌 10 questions based on the video content")
+                st.info("📌 Answer all 10 questions based on the video content")
+                
                 with st.spinner("🤖 AI is creating quiz questions..."):
-                    quiz = generate_quiz(transcript)
-                st.markdown(f'<div class="quiz-question"><pre>{quiz}</pre></div>', unsafe_allow_html=True)
+                    quiz_text = generate_quiz(transcript)
+                
+                if quiz_text:
+                    questions = parse_quiz(quiz_text)
+                    
+                    if questions:
+                        # Initialize session state for answers if not exists
+                        if 'user_answers' not in st.session_state:
+                            st.session_state.user_answers = {}
+                        if 'show_results' not in st.session_state:
+                            st.session_state.show_results = False
+                        
+                        # Display each question
+                        for idx, q in enumerate(questions, 1):
+                            st.markdown(f"### Question {idx}")
+                            st.markdown(f"**{q['question']}**")
+                            
+                            # Radio button for options
+                            user_answer = st.radio(
+                                f"Select your answer for Question {idx}:",
+                                options=['A', 'B', 'C', 'D'],
+                                format_func=lambda x: f"{x}) {q['options'].get(x, '')}",
+                                key=f"q_{idx}",
+                                index=None
+                            )
+                            
+                            if user_answer:
+                                st.session_state.user_answers[idx] = user_answer
+                            
+                            # Show answer if results are visible
+                            if st.session_state.show_results:
+                                if user_answer == q['answer']:
+                                    st.success(f"✅ Correct! The answer is {q['answer']}) {q['options'][q['answer']]}")
+                                else:
+                                    st.error(f"❌ Wrong! The correct answer is {q['answer']}) {q['options'][q['answer']]}")
+                            
+                            st.markdown("---")
+                        
+                        # Submit and Results buttons
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            if st.button("📝 Submit Quiz", use_container_width=True):
+                                st.session_state.show_results = True
+                                
+                                # Calculate score
+                                correct = sum(1 for idx, q in enumerate(questions, 1) 
+                                            if st.session_state.user_answers.get(idx) == q['answer'])
+                                total = len(questions)
+                                percentage = (correct / total) * 100
+                                
+                                st.balloons()
+                                st.success(f"### 🎯 Your Score: {correct}/{total} ({percentage:.1f}%)")
+                                
+                                if percentage >= 80:
+                                    st.info("🌟 Excellent! You have a great understanding of the content!")
+                                elif percentage >= 60:
+                                    st.info("👍 Good job! Keep learning!")
+                                else:
+                                    st.info("📚 Keep practicing! Review the video again.")
+                        
+                        with col2:
+                            if st.button("🔄 Reset Quiz", use_container_width=True):
+                                st.session_state.user_answers = {}
+                                st.session_state.show_results = False
+                                st.rerun()
+                    else:
+                        st.warning("⚠️ Could not parse quiz properly. Showing raw format:")
+                        st.markdown(f'<div class="quiz-question"><pre>{quiz_text}</pre></div>', unsafe_allow_html=True)
+                else:
+                    st.error("❌ Failed to generate quiz. Please try again.")
             
             # Transcript Tab
             with tab4:
