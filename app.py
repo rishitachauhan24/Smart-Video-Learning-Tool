@@ -75,8 +75,23 @@ def generate_summary(transcript):
         )
         return response.text
     except Exception as e:
-        st.error(f"Summary Error Details: {str(e)}")
-        return f"❌ Error generating summary. Please try again."
+        error_msg = str(e)
+        if '429' in error_msg or 'RESOURCE_EXHAUSTED' in error_msg or 'quota' in error_msg.lower():
+            return """
+            ⚠️ **API Quota Limit Reached**
+            
+            Your Google Gemini API free tier limit has been exceeded for today.
+            
+            **Solutions:**
+            1. 🕒 Wait 24 hours for quota reset
+            2. 🔑 Generate a new API key at: https://makersuite.google.com/app/apikey
+            3. 💳 Upgrade to paid tier for higher limits
+            
+            **Current Limits (Free Tier):**
+            - 15 requests per minute
+            - 1500 requests per day
+            """
+        return f"❌ Error generating summary. Please check your internet connection and try again."
 
 def generate_key_points(transcript):
     """Generate key learning points using Google Gemini"""
@@ -105,8 +120,19 @@ def generate_key_points(transcript):
         )
         return response.text
     except Exception as e:
-        st.error(f"Key Points Error Details: {str(e)}")
-        return f"❌ Error generating key points. Please try again."
+        error_msg = str(e)
+        if '429' in error_msg or 'RESOURCE_EXHAUSTED' in error_msg or 'quota' in error_msg.lower():
+            return """
+            ⚠️ **API Quota Limit Reached**
+            
+            Your Google Gemini API free tier limit has been exceeded for today.
+            
+            **Solutions:**
+            1. 🕒 Wait 24 hours for quota reset
+            2. 🔑 Generate a new API key at: https://makersuite.google.com/app/apikey
+            3. 💳 Upgrade to paid tier for higher limits
+            """
+        return f"❌ Error generating key points. Please check your internet connection and try again."
 
 def generate_quiz(transcript):
     """Generate exactly 10 quiz questions using Google Gemini"""
@@ -152,7 +178,20 @@ def generate_quiz(transcript):
         )
         return response.text
     except Exception as e:
-        st.error(f"Quiz Error Details: {str(e)}")
+        error_msg = str(e)
+        if '429' in error_msg or 'RESOURCE_EXHAUSTED' in error_msg or 'quota' in error_msg.lower():
+            st.error("""
+            ⚠️ **API Quota Limit Reached**
+            
+            Your Google Gemini API free tier limit has been exceeded for today.
+            
+            **Solutions:**
+            - 🕒 Wait 24 hours for quota reset
+            - 🔑 Create new API key: https://makersuite.google.com/app/apikey
+            - 💳 Upgrade to paid tier
+            """)
+        else:
+            st.error(f"❌ Error generating quiz. Please try again.")
         return None
 
 def parse_quiz(quiz_text):
